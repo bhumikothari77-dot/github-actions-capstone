@@ -1,0 +1,48 @@
+name: GitHub Actions CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: docker build -t github-actions-capstone .
+
+      - name: Test HTML File
+        run: |
+          test -f index.html
+          grep -q "Hello World!" index.html
+          echo "Test passed!"
+
+      - name: Test Docker Image
+        run: docker run -d --name test-app -p 8080:80 github-actions-capstone
+
+      - name: Check Application
+        run: |
+          sleep 3
+          curl --fail http://localhost:8080
+          docker rm -f test-app
+          echo "Application test successful!"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Deploy Application
+        run: |
+          echo "Deployment stage successful!"
+          echo "Application is ready for deployment."
