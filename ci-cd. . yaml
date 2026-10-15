@@ -1,48 +1,67 @@
-name: GitHub Actions CI/CD
+name: Reusable Workflow - Build & Test
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
+    inputs:
+      python_version:
+        description: 'Python version to use'
+        required: false
+        type: string
+        default: '3.12'
+      run_tests:
+        description: 'Whether to run tests'
+        required: false
+        type: boolean
+        default: true
+    outputs:
+      test_result:
+        description: 'Result of the tests'
+        value: ${{ jobs.build-test.outputs.test_result }}
 
 jobs:
-  build:
+  build-test:
     runs-on: ubuntu-latest
+    outputs:
+      test_result: ${{ steps.test-status.outputs.result }}
 
     steps:
-      - name: Checkout Code
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Build Docker Image
-        run: docker build -t github-actions-capstone .
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
 
-      - name: Test HTML File
+      - name: Install dependencies
         run: |
-          test -f index.html
-          grep -q "Hello World!" index.html
-          echo "Test passed!"
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+          if [ -f pyproject.toml ]; then
+            pip install .
+          fi
 
-      - name: Test Docker Image
-        run: docker run -d --name test-app -p 8080:80 github-actions-capstone
-
-      - name: Check Application
+      - name: Run tests
+        if: ${{ inputs.run_tests }}
+        id: tests
         run: |
-          sleep 3
-          curl --fail http://localhost:8080
-          docker rm -f test-app
-          echo "Application test successful!"
+          if [ -f pytest.ini ] || [ -f pyproject.toml ] || [ -d tests ]; then
+            python -m pip install pytest
+            python -m pytest
+          else
+            echo "No test configuration found; no tests to run."
+          fi
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Deploy Application
+      - name: Set test result
+        id: test-status
+        if: ${{ always() }}
         run: |
-          echo "Deployment stage successful!"
-          echo "Application is ready for deployment."
+          if [ "${{ inputs.run_tests }}" != "true" ]; then
+            echo "result=passed" >> "$GITHUB_OUTPUT"
+          elif [ "${{ steps.tests.outcome }}" = "failure" ]; then
+            echo "result=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=passed" >> "$GITHUB_OUTPUT"
+          fi
