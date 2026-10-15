@@ -4,25 +4,28 @@ on:
   workflow_call:
     inputs:
       python_version:
-        description: 'Python version to use'
+        description: Python version
         required: false
         type: string
-        default: '3.12'
+        default: "3.12"
       run_tests:
-        description: 'Whether to run tests'
+        description: Run tests
         required: false
         type: boolean
         default: true
     outputs:
       test_result:
-        description: 'Result of the tests'
+        description: Test result
         value: ${{ jobs.build-test.outputs.test_result }}
+
+permissions:
+  contents: read
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
     outputs:
-      test_result: ${{ steps.test-status.outputs.result }}
+      test_result: ${{ steps.set-result.outputs.result }}
 
     steps:
       - name: Check out code
@@ -36,32 +39,27 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install Flask pytest
           if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-          if [ -f pyproject.toml ]; then
-            pip install .
+            python -m pip install -r requirements.txt
           fi
 
       - name: Run tests
-        if: ${{ inputs.run_tests }}
         id: tests
-        run: |
-          if [ -f pytest.ini ] || [ -f pyproject.toml ] || [ -d tests ]; then
-            python -m pip install pytest
-            python -m pytest
-          else
-            echo "No test configuration found; no tests to run."
-          fi
+        if: ${{ inputs.run_tests }}
+        run: python -m pytest -v
 
       - name: Set test result
-        id: test-status
-        if: ${{ always() }}
+        id: set-result
+        if: always()
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          RUN_TESTS: ${{ inputs.run_tests }}
         run: |
-          if [ "${{ inputs.run_tests }}" != "true" ]; then
+          if [ "$RUN_TESTS" != "true" ]; then
             echo "result=passed" >> "$GITHUB_OUTPUT"
-          elif [ "${{ steps.tests.outcome }}" = "failure" ]; then
-            echo "result=failed" >> "$GITHUB_OUTPUT"
+          elif [ "$TEST_OUTCOME" = "success" ]; then
+            echo "result=passed" >> "$GITHUB_OUTPUT"
           else
-            echo "result=passed" >> "$GITHUB_OUTPUT"
+            echo "result=failed" >> "$GITHUB_OUTPUT"
           fi
